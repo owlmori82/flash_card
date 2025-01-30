@@ -48,9 +48,15 @@ def main():
     st.title("Flash Card Quiz")
     uploaded_file = st.file_uploader("ファイルをアップロードしてください（例: flash_card.csv）", type=["csv"])
     data_path = "./data/flash_card.csv"
-    if uploaded_file is not None:
+    
+    if "upload" not in st.session_state:
+        st.session_state.upload = False
+        
+    if (uploaded_file is not None) & (st.session_state.upload == False):
         st.success("ファイルがアップロードされました。")
-        df = uploaded_file
+        df = pd.read_csv(uploaded_file)
+        df = filter_questions(df)
+        st.session_state.upload = True
     else:
         st.info("デフォルトのファイル (./data/flash_card.csv) を使用します。")
         try:
@@ -62,12 +68,8 @@ def main():
     # セッション状態を初期化
     if "current_index" not in st.session_state:
         st.session_state.current_index = 0
-        df = filter_questions(df)  # 最初に問題をフィルタリング
-        save_data(df, data_path)  # フィルタリング結果を保存
-        st.session_state.filtered_df = df
-
-    # フィルタリング後のデータを取得
-    df = st.session_state.filtered_df
+    
+    df = filter_questions(df)  # 最初に問題をフィルタリング
 
     if st.session_state.current_index < len(df):
         # 現在の問題を取得
