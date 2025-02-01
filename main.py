@@ -56,21 +56,21 @@ def main():
         st.success("ファイルがアップロードされました。")
         df = pd.read_csv(uploaded_file)
         df = filter_questions(df)
+        save_data(df,data_path)
         st.session_state.upload = True
-    else:
-        st.info("デフォルトのファイル (./data/flash_card.csv) を使用します。")
-        try:
-            df = load_data(data_path)
-        except FileNotFoundError:
-            st.error("デフォルトのファイルが見つかりません。アプリを終了します。")
-            st.stop()
+    
+    #デフォルトファイルから読み直す
+    try:
+        df = load_data(data_path)
+        df = filter_questions(df) #問題をフィルタリング
+    except FileNotFoundError:
+        st.error("デフォルトのファイルが見つかりません。アプリを終了します。")
+        st.stop()
     
     # セッション状態を初期化
     if "current_index" not in st.session_state:
         st.session_state.current_index = 0
     
-    df = filter_questions(df)  # 最初に問題をフィルタリング
-
     if st.session_state.current_index < len(df):
         # 現在の問題を取得
         current_question = df.iloc[st.session_state.current_index]
