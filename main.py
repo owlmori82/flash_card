@@ -2,18 +2,34 @@ import streamlit as st
 import pandas as pd
 import datetime
 import os
+from supabase import create_client, Client
+from st_supabase_connection import SupabaseConnection
+
+
+
 
 # データを読み込む関数
-def load_data(file_name):
-    if os.path.exists(file_name):
-        return pd.read_csv(file_name, parse_dates=["LastAsked"])
-    else:
-        # データが存在しない場合、初期データフレームを返す
-        return pd.DataFrame(columns=["Japanese", "English", "Correct", "Incorrect", "LastAsked"])
+def load_data(conn,TABLE_NAME):
+    # Perform query.
+    response = conn.table(TABLE_NAME).select("*").execute()
+    df = pd.DataFrame(data = response.data)
+    df["LastAsked"] = pd.to_datetime(df["LastAsked"], format="ISO8601")
+    return df
 
 # データを保存する関数
-def save_data(df, file_name):
-    df.to_csv(file_name, index=False)
+def save_data(df,conn,TABLE_NAME):
+    df_tmp = df.copy()
+    df_tmp["LastAsked"] = df_tmp["LastAsked"].astype(str)
+    df_tmp = df_tmp.astype({
+    "id":"int64",
+    "Japanese": "string",
+    "English": "string",
+    "Correct": "int64",
+    "Incorrect": "int64",
+    "LastAsked": "string"  # ISO 8601 形式に変換済みの文字列
+    })
+    for _, row in df_tmp.iterrows():
+        conn.table(TABLE_NAME).upsert(row.to_dict()).execute()
 
 # 優先出題条件に基づきデータをフィルタリング
 def filter_questions(df):
@@ -43,39 +59,44 @@ def filter_questions(df):
     final_result = final_result.drop(columns=["DaysSinceLastAsked", "Accuracy"])
     return final_result
 
+#回答結果を更新
+def update_data(rec,df):
+    # 更新前のデータ型を保存
+    df = df.astype(str)
+    update_row = pd.DataFrame(rec,index = rec.index).T.astype(str)
+    df = pd.concat([df,update_row])
+    return df
+
 # Streamlitアプリ
 def main():
     st.title("Flash Card Quiz")
-    uploaded_file = st.file_uploader("ファイルをアップロードしてください（例: flash_card.csv）", type=["csv"])
-    data_path = "./data/flash_card.csv"
     
-    if "upload" not in st.session_state:
-        st.session_state.upload = False
-        
-    if (uploaded_file is not None) & (st.session_state.upload == False):
-        st.success("ファイルがアップロードされました。")
-        df = pd.read_csv(uploaded_file)
-        df = filter_questions(df)
-        save_data(df,data_path)
-        st.session_state.upload = True
-    
-    #デフォルトファイルから読み直す
-    try:
-        df = load_data(data_path)
-        df = filter_questions(df) #問題をフィルタリング
-    except FileNotFoundError:
-        st.error("デフォルトのファイルが見つかりません。アプリを終了します。")
-        st.stop()
-    
-    # セッション状態を初期化
+    #初期化
+    if "read_file" not in st.session_state:
+        st.session_state.read_file = False
+    if "data" not in st.session_state:
+        st.session_state.data = None
     if "current_index" not in st.session_state:
         st.session_state.current_index = 0
+    if "update_df" not in st.session_state:
+        st.session_state.update_df = pd.DataFrame(columns=['id','Japanese','English','Correct','Incorrect','LastAsked'])
+        
+    # Initialize connection.
+    conn = st.connection("supabase",type=SupabaseConnection)
+    TABLE_NAME = 'wordcards'
     
-    if st.session_state.current_index < len(df):
-        # 現在の問題を取得
-        current_question = df.iloc[st.session_state.current_index]
+    #データベースから取得して初期ロード
+    if st.session_state.read_file == False:
+        st.session_state.data = load_data(conn,TABLE_NAME)
+        st.session_state.data = filter_questions(st.session_state.data)
+        st.session_state.read_file = True
+        
+    #問題順を並べ替えて抽出
+    if st.session_state.current_index < len(st.session_state.data):
+        current_question = st.session_state.data.iloc[st.session_state.current_index]
         st.write(f"**問題:** {current_question['Japanese']}")
 
+ 
         # 答えを見るボタン
         if "show_answer" not in st.session_state:
             st.session_state.show_answer = False
@@ -88,36 +109,48 @@ def main():
 
             # 正解ボタン
             if st.button("正解"):
-                df.loc[st.session_state.current_index, "Correct"] += 1
-                df.loc[st.session_state.current_index, "LastAsked"] = datetime.datetime.now()
-                save_data(df, data_path)  # データを保存
+                current_question["Correct"] += 1
+                current_question["LastAsked"] = datetime.datetime.now()
+                st.session_state.update_df = update_data(current_question,st.session_state.update_df)
                 st.session_state.current_index += 1
                 st.session_state.show_answer = False
                 st.rerun()
 
             # 不正解ボタン
             if st.button("不正解"):
-                df.loc[st.session_state.current_index, "Incorrect"] += 1
-                df.loc[st.session_state.current_index, "LastAsked"] = datetime.datetime.now()
-                save_data(df, data_path)  # データを保存
+                current_question["Incorrect"] += 1
+                current_question["LastAsked"] = datetime.datetime.now()
+                st.session_state.update_df = update_data(current_question,st.session_state.update_df)
                 st.session_state.current_index += 1
                 st.session_state.show_answer = False
                 st.rerun()
     else:
         st.write("すべての問題が終了しました！")
-    st.write("----------終了する前にダウンロードする-------------------------")
-     # ダウンロードボタンを追加
-    st.download_button(
-        label="結果をダウンロード",
-        data=df.to_csv(index=False).encode("utf-8"),
-        file_name="updated_flash_card.csv",
-        mime="text/csv"
-    )
+    
     #終了ボタン
     if st.button("終了"):
-       save_data(df, data_path)
+       save_data(st.session_state.update_df,conn,TABLE_NAME)
        st.success("記録を保存しました！お疲れ様でした。")
        st.stop()
        
+    st.write("--------メンテナンス----------------")
+    #アップロード
+    #uploadファイルがあるときはそのファイルでデフォルトデータを更新する。
+    uploaded_file = st.file_uploader("データを更新するときはファイルをアップロードしてください", type=["csv"])
+    
+    if  uploaded_file is not None:
+        upf = pd.read_csv(uploaded_file)
+        save_data(upf,conn,TABLE_NAME)
+        st.success("ファイルがアップロードされ、データが更新されました。")
+        
+            
+    # ダウンロードボタンを追加
+    st.download_button(
+        label="結果をダウンロード",
+        data=st.session_state.data.to_csv(index=False).encode("utf-8"),
+        file_name="download_wordcards.csv",
+        mime="text/csv"
+    )
+   
 if __name__ == "__main__":
     main()
