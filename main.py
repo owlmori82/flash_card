@@ -67,6 +67,13 @@ def update_data(rec,df):
     df = pd.concat([df,update_row])
     return df
 
+#終了処理
+def fin_process(update_rows,conn_point,table_name,count):
+    st.write("回答数：",count)
+    save_data(update_rows,conn_point,table_name)
+    st.success("記録を保存しました！お疲れ様でした。")
+    st.stop()
+
 # Streamlitアプリ
 def main():
     st.title("Flash Card Quiz")
@@ -126,13 +133,12 @@ def main():
                 st.rerun()
     else:
         st.write("すべての問題が終了しました！")
+        fin_process(st.session_state.update_df,conn,TABLE_NAME,st.session_state.current_index)
     
     #終了ボタン
     if st.button("終了"):
-       save_data(st.session_state.update_df,conn,TABLE_NAME)
-       st.success("記録を保存しました！お疲れ様でした。")
-       st.stop()
-       
+       fin_process(st.session_state.update_df,conn,TABLE_NAME,st.session_state.current_index)
+        
     st.write("--------メンテナンス----------------")
     #アップロード
     #uploadファイルがあるときはそのファイルでデフォルトデータを更新する。
