@@ -87,10 +87,13 @@ def main():
         st.session_state.current_index = 0
     if "update_df" not in st.session_state:
         st.session_state.update_df = pd.DataFrame(columns=['id','Japanese','English','Correct','Incorrect','LastAsked'])
-        
+    if "repair_question" not in st.session_state:
+        st.session_state.repair_question = "empty"
+                
     # Initialize connection.
     conn = st.connection("supabase",type=SupabaseConnection)
-    TABLE_NAME = 'wordcards'
+    TABLE_NAME = 'develop_wordcards'
+    #TABLE_NAME = 'wordcards'
     
     #データベースから取得して初期ロード
     if st.session_state.read_file == False:
@@ -103,7 +106,6 @@ def main():
         current_question = st.session_state.data.iloc[st.session_state.current_index]
         st.write(f"**問題:** {current_question['Japanese']}")
 
- 
         # 答えを見るボタン
         if "show_answer" not in st.session_state:
             st.session_state.show_answer = False
@@ -113,11 +115,24 @@ def main():
 
         if st.session_state.show_answer:
             st.write(f"**答え:** {current_question['English']}")
-
+            
+            #問題文の訂正
+            if st.session_state.repair_question == "empty":
+                st.write("---------------------------------")
+                repair = st.text_input("問題分の訂正")
+                if st.button("訂正"):
+                    st.session_state.repair_question = repair
+                st.write("---------------------------------")
+            
+            
             # 正解ボタン
             if st.button("正解"):
                 current_question["Correct"] += 1
                 current_question["LastAsked"] = datetime.datetime.now()
+                #問題文の訂正
+                if st.session_state.repair_question != "empty":
+                    current_question['Japanese'] = st.session_state.repair_question
+                    st.session_state.repair_question = "empty"
                 st.session_state.update_df = update_data(current_question,st.session_state.update_df)
                 st.session_state.current_index += 1
                 st.session_state.show_answer = False
@@ -127,6 +142,10 @@ def main():
             if st.button("不正解"):
                 current_question["Incorrect"] += 1
                 current_question["LastAsked"] = datetime.datetime.now()
+                #問題文の訂正
+                if st.session_state.repair_question != "empty":
+                    current_question['Japanese'] = st.session_state.repair_question
+                    st.session_state.repair_question = "empty"
                 st.session_state.update_df = update_data(current_question,st.session_state.update_df)
                 st.session_state.current_index += 1
                 st.session_state.show_answer = False
