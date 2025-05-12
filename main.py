@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import os
+from gtts import gTTS
 from supabase import create_client, Client
 from st_supabase_connection import SupabaseConnection
 
@@ -115,6 +116,13 @@ def main():
 
         if st.session_state.show_answer:
             st.write(f"**答え:** {current_question['English']}")
+            #音声
+            # gTTSで音声生成
+            tts = gTTS(current_question['English'], lang='en')
+            audio_file = "output.mp3"
+            tts.save(audio_file)
+            # 再生
+            st.audio(audio_file, format="audio/mp3")
             
             #問題文の訂正
             if st.session_state.repair_question == "empty":
