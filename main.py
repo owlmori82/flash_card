@@ -93,8 +93,8 @@ def main():
                 
     # Initialize connection.
     conn = st.connection("supabase",type=SupabaseConnection)
-    #TABLE_NAME = 'develop_wordcards'
-    TABLE_NAME = 'wordcards'
+    TABLE_NAME = 'develop_wordcards'
+    #TABLE_NAME = 'wordcards'
     
     #データベースから取得して初期ロード
     if st.session_state.read_file == False:
@@ -106,6 +106,7 @@ def main():
     if st.session_state.current_index < len(st.session_state.data):
         current_question = st.session_state.data.iloc[st.session_state.current_index]
         st.write(f"**問題:** {current_question['Japanese']}")
+        st.write(f"--現在の回答数:--** {st.session_state.current_index}回")
 
         # 答えを見るボタン
         if "show_answer" not in st.session_state:
