@@ -93,8 +93,8 @@ def main():
                 
     # Initialize connection.
     conn = st.connection("supabase",type=SupabaseConnection)
-    TABLE_NAME = 'develop_wordcards'
-    #TABLE_NAME = 'wordcards'
+    #TABLE_NAME = 'develop_wordcards'
+    TABLE_NAME = 'wordcards'
     
     #データベースから取得して初期ロード
     if st.session_state.read_file == False:
