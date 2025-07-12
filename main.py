@@ -5,6 +5,7 @@ import os
 from gtts import gTTS
 from supabase import create_client, Client
 from st_supabase_connection import SupabaseConnection
+import uuid
 
 
 
@@ -75,8 +76,8 @@ def fin_process(update_rows,conn_point,table_name,count):
     st.success("記録を保存しました！お疲れ様でした。")
     st.stop()
 
-# Streamlitアプリ
-def main():
+# === ページ1：復習問題出題 ===
+def page_quiz(conn, TABLE_NAME):
     st.title("Flash Card Quiz")
     
     #初期化
@@ -90,12 +91,7 @@ def main():
         st.session_state.update_df = pd.DataFrame(columns=['id','Japanese','English','Correct','Incorrect','LastAsked'])
     if "repair_question" not in st.session_state:
         st.session_state.repair_question = "empty"
-                
-    # Initialize connection.
-    conn = st.connection("supabase",type=SupabaseConnection)
-    #TABLE_NAME = 'develop_wordcards'
-    TABLE_NAME = 'wordcards'
-    
+                     
     #データベースから取得して初期ロード
     if st.session_state.read_file == False:
         st.session_state.data = load_data(conn,TABLE_NAME)
@@ -185,6 +181,66 @@ def main():
         file_name="download_wordcards.csv",
         mime="text/csv"
     )
-   
+
+# === ページ2：新規問題の登録 ===
+
+def page_register(conn, TABLE_NAME):
+    st.title("新しい問題の登録")
+
+    def get_next_id():
+        existing_data = load_data(conn, TABLE_NAME)
+        if existing_data.empty:
+            return 1
+        else:
+            existing_ids = pd.to_numeric(existing_data["id"], errors="coerce")
+            return int(existing_ids.max()) + 1
+
+    # IDをセッション状態で保持・更新
+    if "next_id" not in st.session_state:
+        st.session_state.next_id = get_next_id()
+
+    next_id = st.session_state.next_id
+    st.info(f"この問題のIDは `{next_id}` に自動設定されます。")
+    
+    # 一意なキーを生成
+    if "form_key" not in st.session_state:
+        st.session_state.form_key = str(uuid.uuid4())
+    form_key = st.session_state.form_key
+
+    # 入力フォーム
+    exercise = st.text_area("日本語（必須）", key=f"exercise_{form_key}")
+    answer = st.text_area("英語（必須）", key=f"answer_{form_key}")
+
+    if st.button("この内容で問題を登録"):
+        if exercise and answer:
+            new_question = {
+                "id": str(next_id),
+                "Japanese": exercise,
+                "English": answer,
+                "Correct": 0,
+                "Incorrect": 0,
+                "LastAsked": datetime.datetime.now().isoformat()
+            }
+            conn.table(TABLE_NAME).insert(new_question).execute()
+            st.success("新しい問題が登録されました！")
+            #セッション状態をクリアして再実行
+            st.session_state.clear()
+            st.rerun()
+        else:
+            st.error("日本語、英語は必須です。")
+
+# === メインアプリ ===
+def main():
+    conn = st.connection("supabase", type=SupabaseConnection)
+    #TABLE_NAME = 'develop_wordcards'
+    TABLE_NAME = 'wordcards'
+
+    page = st.sidebar.selectbox("ページを選択", ["問題出題", "問題登録"])
+
+    if page == "問題出題":
+        page_quiz(conn, TABLE_NAME)
+    elif page == "問題登録":
+        page_register(conn, TABLE_NAME)
+
 if __name__ == "__main__":
     main()
