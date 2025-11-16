@@ -5,44 +5,25 @@ import os
 from supabase import create_client, Client
 from st_supabase_connection import SupabaseConnection
 import uuid
-import pyttsx3
 import hashlib
 
 
+# ====== Browser TTS 関数（追加） ======
+def browser_tts(text: str):
+    """ブラウザ側 SpeechSynthesis で英文を読み上げる"""
+    escaped = text.replace('"', '\\"')
+    tts_js = f"""
+        <script>
+            var msg = new SpeechSynthesisUtterance("{escaped}");
+            msg.lang = "en-US";
+            window.speechSynthesis.speak(msg);
+        </script>
+    """
+    st.markdown(tts_js, unsafe_allow_html=True)
 
-# --- オフラインTTS（pyttsx3） +キャッシュ ---
-_engine = None
-
-def offline_tts(text: str) -> str:
-    """ pyttsx3 で音声ファイルを生成（オフライン）。同じ英文はキャッシュして再利用。 """
-    global _engine
-
-    # キャッシュフォルダ
-    os.makedirs("audio_cache", exist_ok=True)
-
-    # テキストのハッシュでファイル名生成
-    file_hash = hashlib.md5(text.encode()).hexdigest()
-    audio_file = f"audio_cache/{file_hash}.mp3"
-
-    # キャッシュがあれば生成しない
-    if os.path.exists(audio_file):
-        return audio_file
-
-    # エンジン初期化（最初の1回だけ）
-    if _engine is None:
-        _engine = pyttsx3.init()
-        _engine.setProperty('rate', 150)   # 読み上げ速度（お好みで調整可）
-        _engine.setProperty('volume', 1.0) # 音量
-
-    # 音声生成
-    _engine.save_to_file(text, audio_file)
-    _engine.runAndWait()
-
-    return audio_file
 
 # データを読み込む関数
 def load_data(conn,TABLE_NAME):
-    # Perform query.
     response = conn.table(TABLE_NAME).select("*").execute()
     df = pd.DataFrame(data = response.data)
     df["LastAsked"] = pd.to_datetime(df["LastAsked"], format="ISO8601")
@@ -53,12 +34,12 @@ def save_data(df,conn,TABLE_NAME):
     df_tmp = df.copy()
     df_tmp["LastAsked"] = df_tmp["LastAsked"].astype(str)
     df_tmp = df_tmp.astype({
-    "id":"int64",
-    "Japanese": "string",
-    "English": "string",
-    "Correct": "int64",
-    "Incorrect": "int64",
-    "LastAsked": "string"  # ISO 8601 形式に変換済みの文字列
+        "id":"int64",
+        "Japanese": "string",
+        "English": "string",
+        "Correct": "int64",
+        "Incorrect": "int64",
+        "LastAsked": "string"
     })
     for _, row in df_tmp.iterrows():
         conn.table(TABLE_NAME).upsert(row.to_dict()).execute()
@@ -93,7 +74,6 @@ def filter_questions(df):
 
 #回答結果を更新
 def update_data(rec,df):
-    # 更新前のデータ型を保存
     df = df.astype(str)
     update_row = pd.DataFrame(rec,index = rec.index).T.astype(str)
     df = pd.concat([df,update_row])
@@ -122,19 +102,18 @@ def page_quiz(conn, TABLE_NAME):
     if "repair_question" not in st.session_state:
         st.session_state.repair_question = "empty"
                      
-    #データベースから取得して初期ロード
+    #データベースから取得
     if st.session_state.read_file == False:
         st.session_state.data = load_data(conn,TABLE_NAME)
         st.session_state.data = filter_questions(st.session_state.data)
         st.session_state.read_file = True
         
-    #問題順を並べ替えて抽出
     if st.session_state.current_index < len(st.session_state.data):
         current_question = st.session_state.data.iloc[st.session_state.current_index]
         st.write(f"**問題:** {current_question['Japanese']}")
-        st.write(f"--現在の回答数:--** {st.session_state.current_index}回")
+        st.write(f"--現在の回答数:-- **{st.session_state.current_index} 回**")
 
-        # 答えを見るボタン
+        # 答えを見る
         if "show_answer" not in st.session_state:
             st.session_state.show_answer = False
 
@@ -143,44 +122,42 @@ def page_quiz(conn, TABLE_NAME):
 
         if st.session_state.show_answer:
             st.write(f"**答え:** {current_question['English']}")
-            #音声
-            # --- オフライン音声生成（pyttsx3） ---
-            english_text = current_question['English']
-            audio_file = offline_tts(english_text)
 
-            # 再生
-            st.audio(audio_file, format="audio/mp3")
-            
+            # === ここを Browser TTS へ変更 ===
+            if st.button("🔊 音声を再生"):
+                browser_tts(current_question['English'])
+
             #問題文の訂正
             if st.session_state.repair_question == "empty":
                 st.write("---------------------------------")
-                repair = st.text_input("問題分の訂正")
+                repair = st.text_input("問題文の訂正")
                 if st.button("訂正"):
                     st.session_state.repair_question = repair
                 st.write("---------------------------------")
             
-            
-            # 正解ボタン
+            # 正解
             if st.button("正解"):
                 current_question["Correct"] += 1
                 current_question["LastAsked"] = datetime.datetime.now()
-                #問題文の訂正
+
                 if st.session_state.repair_question != "empty":
                     current_question['Japanese'] = st.session_state.repair_question
                     st.session_state.repair_question = "empty"
+
                 st.session_state.update_df = update_data(current_question,st.session_state.update_df)
                 st.session_state.current_index += 1
                 st.session_state.show_answer = False
                 st.rerun()
 
-            # 不正解ボタン
+            # 不正解
             if st.button("不正解"):
                 current_question["Incorrect"] += 1
                 current_question["LastAsked"] = datetime.datetime.now()
-                #問題文の訂正
+
                 if st.session_state.repair_question != "empty":
                     current_question['Japanese'] = st.session_state.repair_question
                     st.session_state.repair_question = "empty"
+
                 st.session_state.update_df = update_data(current_question,st.session_state.update_df)
                 st.session_state.current_index += 1
                 st.session_state.show_answer = False
@@ -191,20 +168,17 @@ def page_quiz(conn, TABLE_NAME):
     
     #終了ボタン
     if st.button("終了"):
-       fin_process(st.session_state.update_df,conn,TABLE_NAME,st.session_state.current_index)
+        fin_process(st.session_state.update_df,conn,TABLE_NAME,st.session_state.current_index)
         
     st.write("--------メンテナンス----------------")
-    #アップロード
-    #uploadファイルがあるときはそのファイルでデフォルトデータを更新する。
+    
     uploaded_file = st.file_uploader("データを更新するときはファイルをアップロードしてください", type=["csv"])
     
-    if  uploaded_file is not None:
+    if uploaded_file is not None:
         upf = pd.read_csv(uploaded_file)
         save_data(upf,conn,TABLE_NAME)
         st.success("ファイルがアップロードされ、データが更新されました。")
         
-            
-    # ダウンロードボタンを追加
     st.download_button(
         label="結果をダウンロード",
         data=st.session_state.data.to_csv(index=False).encode("utf-8"),
@@ -213,7 +187,6 @@ def page_quiz(conn, TABLE_NAME):
     )
 
 # === ページ2：新規問題の登録 ===
-
 def page_register(conn, TABLE_NAME):
     st.title("新しい問題の登録")
 
@@ -225,19 +198,16 @@ def page_register(conn, TABLE_NAME):
             existing_ids = pd.to_numeric(existing_data["id"], errors="coerce")
             return int(existing_ids.max()) + 1
 
-    # IDをセッション状態で保持・更新
     if "next_id" not in st.session_state:
         st.session_state.next_id = get_next_id()
 
     next_id = st.session_state.next_id
     st.info(f"この問題のIDは `{next_id}` に自動設定されます。")
     
-    # 一意なキーを生成
     if "form_key" not in st.session_state:
         st.session_state.form_key = str(uuid.uuid4())
     form_key = st.session_state.form_key
 
-    # 入力フォーム
     exercise = st.text_area("日本語（必須）", key=f"exercise_{form_key}")
     answer = st.text_area("英語（必須）", key=f"answer_{form_key}")
 
@@ -253,7 +223,6 @@ def page_register(conn, TABLE_NAME):
             }
             conn.table(TABLE_NAME).insert(new_question).execute()
             st.success("新しい問題が登録されました！")
-            #セッション状態をクリアして再実行
             st.session_state.clear()
             st.rerun()
         else:
@@ -262,7 +231,6 @@ def page_register(conn, TABLE_NAME):
 # === メインアプリ ===
 def main():
     conn = st.connection("supabase", type=SupabaseConnection)
-    #TABLE_NAME = 'develop_wordcards'
     TABLE_NAME = 'wordcards'
 
     page = st.sidebar.selectbox("ページを選択", ["問題出題", "問題登録"])
