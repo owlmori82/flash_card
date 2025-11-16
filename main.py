@@ -2,13 +2,43 @@ import streamlit as st
 import pandas as pd
 import datetime
 import os
-from gtts import gTTS
 from supabase import create_client, Client
 from st_supabase_connection import SupabaseConnection
 import uuid
+import pyttsx3
+import hashlib
 
 
 
+# --- オフラインTTS（pyttsx3） +キャッシュ ---
+_engine = None
+
+def offline_tts(text: str) -> str:
+    """ pyttsx3 で音声ファイルを生成（オフライン）。同じ英文はキャッシュして再利用。 """
+    global _engine
+
+    # キャッシュフォルダ
+    os.makedirs("audio_cache", exist_ok=True)
+
+    # テキストのハッシュでファイル名生成
+    file_hash = hashlib.md5(text.encode()).hexdigest()
+    audio_file = f"audio_cache/{file_hash}.mp3"
+
+    # キャッシュがあれば生成しない
+    if os.path.exists(audio_file):
+        return audio_file
+
+    # エンジン初期化（最初の1回だけ）
+    if _engine is None:
+        _engine = pyttsx3.init()
+        _engine.setProperty('rate', 150)   # 読み上げ速度（お好みで調整可）
+        _engine.setProperty('volume', 1.0) # 音量
+
+    # 音声生成
+    _engine.save_to_file(text, audio_file)
+    _engine.runAndWait()
+
+    return audio_file
 
 # データを読み込む関数
 def load_data(conn,TABLE_NAME):
@@ -114,10 +144,10 @@ def page_quiz(conn, TABLE_NAME):
         if st.session_state.show_answer:
             st.write(f"**答え:** {current_question['English']}")
             #音声
-            # gTTSで音声生成
-            tts = gTTS(current_question['English'], lang='en')
-            audio_file = "output.mp3"
-            tts.save(audio_file)
+            # --- オフライン音声生成（pyttsx3） ---
+            english_text = current_question['English']
+            audio_file = offline_tts(english_text)
+
             # 再生
             st.audio(audio_file, format="audio/mp3")
             
@@ -232,8 +262,8 @@ def page_register(conn, TABLE_NAME):
 # === メインアプリ ===
 def main():
     conn = st.connection("supabase", type=SupabaseConnection)
-    #TABLE_NAME = 'develop_wordcards'
-    TABLE_NAME = 'wordcards'
+    TABLE_NAME = 'develop_wordcards'
+    #TABLE_NAME = 'wordcards'
 
     page = st.sidebar.selectbox("ページを選択", ["問題出題", "問題登録"])
 
