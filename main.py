@@ -262,8 +262,8 @@ def page_register(conn, TABLE_NAME):
 # === メインアプリ ===
 def main():
     conn = st.connection("supabase", type=SupabaseConnection)
-    TABLE_NAME = 'develop_wordcards'
-    #TABLE_NAME = 'wordcards'
+    #TABLE_NAME = 'develop_wordcards'
+    TABLE_NAME = 'wordcards'
 
     page = st.sidebar.selectbox("ページを選択", ["問題出題", "問題登録"])
 
